@@ -46,6 +46,9 @@
             projection: 'mercator'
         });
 
+        //add controls
+        map.addControl(new mapboxgl.NavigationControl());
+        
         map.on('load', () => {
 
             d3.csv('https://docs.google.com/spreadsheets/d/e/2PACX-1vRY5HJmaTpYtjQeXgfQNDzJ1Sa5h7B44ums1Gee3-ZIr-fpiJoryN6BfDyD3NeBhDrSG4cdU8neWK9c/pub?output=csv')
