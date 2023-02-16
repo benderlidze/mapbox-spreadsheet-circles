@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>MAP</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.10.0/mapbox-gl.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="map"></div>
+    <script>
+
+        const main = {
+            data: [],
+            filters: new Set()
+        };
+
+        // const switchersEnableDiv = document.getElementById("filters")
+        const switchersEnableDiv = document.getElementById("infoDiv")
+        mapboxgl.accessToken = 'pk.eyJ1Ijoic3dlcnQiLCJhIjoiY2s3bHNtdjF2MDJ1eTNmcGowanU5MHR4ZiJ9.hzhWj9bhgD5itpWAPc3nNA';
+        const map = new mapboxgl.Map({
+            container: 'map',
+            zoom: 2.7,
+            center: { lng: -100.24484896840363, lat: 29.50674119154816 },
+            // Choose from Mapbox's core styles, or make your own style with Mapbox Studio
+            style: 'mapbox://styles/mapbox/light-v11',
+            projection: 'mercator'
+        });
+
+        map.on('load', () => {
+
+            d3.csv('https://docs.google.com/spreadsheets/d/e/2PACX-1vRY5HJmaTpYtjQeXgfQNDzJ1Sa5h7B44ums1Gee3-ZIr-fpiJoryN6BfDyD3NeBhDrSG4cdU8neWK9c/pub?output=csv')
+                .then(arr => {
+
+                    console.log('arr', arr);
+                    const pins = arr
+                        .map(pin => {
+                            const { type, from: from, to, title, description, lat, lon } = pin
+
+                            const _from = new Date(from)
+                            const _to = new Date(to)
+                            const diff = new Date(_to.getTime() - _from.getTime());
+                            const yearDiff = diff.getUTCFullYear() - 1970
+
+                            return {
+                                type: "Feature",
+                                geometry: {
+                                    type: "Point",
+                                    coordinates: [+lon, +lat]
+                                },
+                                properties: {
+                                    type,
+                                    from: _from,
+                                    to: _to || "",
+                                    years: yearDiff || "",
+                                    title,
+                                    description,
+                                    yearsString: type === "home" ? `${from} to ${to}` : `${from}`,
+                                    color: type === "home" ? "#00F" : "#F00"
+                                }
+                            }
+                        });
+
+                    //vacation arcs
+                    const homeTimeArray = arr.filter(pin => pin.type === "home").map(pin => {
+                        return {
+                            from: new Date(pin.from).getTime(),
+                            to: new Date(pin.to).getTime(),
+                            lat: +pin.lat,
+                            lon: +pin.lon
+                        }
+                    })
+                    const arcs = [];
+                    arr.filter(pin => pin.type === "vacation").forEach(pin => {
+                        //find current home for every vacation and draw arc
+                        console.log('homeTimeArray', pin);
+                        const vacTime = new Date(pin.from).getTime()
+
+                        const home = homeTimeArray.find(home => {
+                            return home.from < vacTime && home.to > vacTime
+                        })
+                        if (homeTimeArray) {
+                            console.log('pin', pin);
+                            arcs.push(
+                                //drawArc([+home.lon, home.lat], [+((+pin.lon).toFixed(4)), +((+pin.lat).toFixed(4))])
+                                //drawArc([+home.lon, home.lat], [(+pin.lon).toFixed(5), (+pin.lat).toFixed(5)])
+                                turf.greatCircle([+home.lon, home.lat], [+pin.lon, +pin.lat])
+                            )
+                        }
+                    })
+                    console.log('arcs', arcs);
+                    map.getSource('main').setData(turf.featureCollection(pins));
+                    map.getSource('arcs').setData(turf.featureCollection(arcs));
+                })
+
+            map.addSource('main', {
+                'type': 'geojson',
+                'data': turf.featureCollection([])
+            });
+            map.addLayer({
+                'id': 'main',
+                'type': 'circle',
+                'source': 'main',
+                'paint': {
+                    'circle-radius': 12,
+                    'circle-color': ['get', 'color'],
+                    "circle-stroke-color": "white",
+                    "circle-stroke-width": 2
+                }
+            });
+            map.addLayer({
+                'id': "text-data",
+                'type': 'symbol',
+                'source': 'main',
+                'layout': {
+                    'text-field': '{years}',
+                    'text-font': [
+                        'Open Sans Bold',
+                        'Arial Unicode MS Bold'
+                    ],
+                    'text-size': 11,
+                    'text-transform': 'uppercase',
+                    // 'text-letter-spacing': 0.05,
+                    // 'text-offset': [0, 1.5]
+                    'text-allow-overlap': false,
+                },
+                'paint': {
+                    'text-color': '#202',
+                    'text-halo-color': '#fff',
+                    'text-halo-width': 2
+                },
+            });
+
+            map.addSource('arcs', {
+                'type': 'geojson',
+                'data': turf.featureCollection([])
+            });
+            map.addLayer({
+                'id': 'route',
+                'source': 'arcs',
+                'type': 'line',
+                'paint': {
+                    'line-width': 2,
+                    'line-color': '#ccc',
+                    'line-opacity': 0.8,
+                    'line-dasharray': [1, 1]
+                }
+            }, "main", "text-data");
+
+            map.on('click', 'main', (e) => {
+                // Copy coordinates array.
+                const coordinates = e.features[0].geometry.coordinates.slice();
+                // Ensure that if the map is zoomed out such that multiple
+                // copies of the feature are visible, the popup appears
+                // over the copy being pointed to.
+                while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+                    coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+                }
+                const { type, from, to, title, description, lat, lon, yearsString } = e.features[0].properties
+                const descr = `
+                                <h1>${title}</h1>
+                                <div style="margin-top:10px;">
+                                <div>${yearsString}</div>
+                                <div>${description}</div>
+                                </div>
+                            `
+                new mapboxgl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(descr)
+                    .addTo(map);
+            });
+
+            map.on('mousemove', 'main', e => {
+                map.getCanvas().style.cursor = 'pointer';
+            })
+
+            map.on('mouseleave', 'main', () => {
+                map.getCanvas().style.cursor = '';
+            });
+
+        });
+
+
+        function drawArc(origin, destination) {
+            const route = {
+                'type': 'FeatureCollection',
+                'features': [
+                    {
+                        'type': 'Feature',
+                        'geometry': {
+                            'type': 'LineString',
+                            'coordinates': [origin, destination]
+                        }
+                    }
+                ]
+            };
+            // Calculate the distance in kilometers between route start/end point.
+            const lineDistance = turf.length(route.features[0]);
+            console.log('lineDistance', lineDistance);
+            const arc = [];
+            const steps = 100;
+            // Draw an arc between the `origin` & `destination` of the two points
+            for (let i = 0; i < lineDistance; i += lineDistance / steps) {
+                const segment = turf.along(route.features[0], i);
+                arc.push(segment.geometry.coordinates);
+            }
+            route.features[0].geometry.coordinates = arc;
+
+            return route.features[0]
+        }
+
+    </script>
+</body>
+
+</html>
