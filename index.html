@@ -48,7 +48,7 @@
 
         //add controls
         map.addControl(new mapboxgl.NavigationControl());
-        
+
         map.on('load', () => {
 
             d3.csv('https://docs.google.com/spreadsheets/d/e/2PACX-1vRY5HJmaTpYtjQeXgfQNDzJ1Sa5h7B44ums1Gee3-ZIr-fpiJoryN6BfDyD3NeBhDrSG4cdU8neWK9c/pub?output=csv')
@@ -56,7 +56,7 @@
 
                     console.log('arr', arr);
                     const pins = arr
-                        .map(pin => {
+                        .map((pin, key) => {
                             const { type, from: from, to, title, description, lat, lon } = pin
 
                             const _from = new Date(from)
@@ -77,6 +77,11 @@
                                     years: yearDiff || "",
                                     title,
                                     description,
+
+                                    //icon for Home 1 and hide cirlce with opacity
+                                    'icon-image': title === "Home 1" ? 'home' : "",
+                                    opacity: title === "Home 1" ? 0 : 1,
+
                                     yearsString: type === "home" ? `${from} to ${to}` : `${from}`,
                                     color: type === "home" ? "#00F" : "#F00"
                                 }
@@ -110,15 +115,30 @@
                             )
                         }
                     })
-                    console.log('arcs', arcs);
+
+                    //home path arcs
+                    const homePath = arr.filter(pin => pin.type === "home").map(pin => {
+                        return [+pin.lon, +pin.lat]
+                    })
+                    const homePathLine = turf.lineString(homePath)
+                    console.log('homePathLine', homePathLine);
+
                     map.getSource('main').setData(turf.featureCollection(pins));
                     map.getSource('arcs').setData(turf.featureCollection(arcs));
+                    map.getSource('homesLine').setData(homePathLine);
                 })
+
+
+            map.loadImage('icons/home.png', (error, image) => {
+                if (error) throw error;
+                map.addImage('home', image);
+            })
 
             map.addSource('main', {
                 'type': 'geojson',
                 'data': turf.featureCollection([])
             });
+
             map.addLayer({
                 'id': 'main',
                 'type': 'circle',
@@ -127,14 +147,21 @@
                     'circle-radius': 12,
                     'circle-color': ['get', 'color'],
                     "circle-stroke-color": "white",
-                    "circle-stroke-width": 2
+                    "circle-stroke-width": 2,
+                    "circle-opacity": ['get', 'opacity']
                 }
             });
+
             map.addLayer({
                 'id': "text-data",
                 'type': 'symbol',
                 'source': 'main',
                 'layout': {
+
+                    'icon-image': ['get', 'icon-image'],
+                    'icon-allow-overlap': true,
+                    'icon-size': 0.8,
+
                     'text-field': '{years}',
                     'text-font': [
                         'Open Sans Bold',
@@ -168,6 +195,43 @@
                     'line-dasharray': [1, 1]
                 }
             }, "main", "text-data");
+
+            map.addSource('homesLine', {
+                'type': 'geojson',
+                'data': turf.featureCollection([])
+            });
+            map.addLayer({
+                'id': 'homesLine',
+                'source': 'homesLine',
+                'type': 'line',
+                'paint': {
+                    'line-width': 1,
+                    'line-color': 'red',
+                    // 'line-opacity': 0.8,
+                    // 'line-dasharray': [1, 1]
+                }
+            }, "main", "text-data");
+
+
+            map.loadImage('icons/arrow20.png', (err, image) => {
+                if (err) { return; }
+                map.addImage('arrow', image);
+                map.addLayer({
+                    'id': 'arrowId',
+                    'type': 'symbol',
+                    'source': 'homesLine',
+                    'layout': {
+                        'symbol-placement': 'line',
+                        //'symbol-spacing': 1,
+                        'icon-allow-overlap': true,
+                        // 'icon-ignore-placement': true,
+                        'icon-image': 'arrow',
+                        'icon-size': 1,
+                        'visibility': 'visible'
+                    }
+                }, "main", "text-data");
+            });
+
 
             map.on('click', 'main', (e) => {
                 // Copy coordinates array.
